@@ -71,9 +71,50 @@ export type Persona = {
   activeUntil?: string;
   /** 'correturnos' = horario fijo (jueves + fin de semana) en vez del patrón mañana/tarde habitual */
   role?: Role;
+  /**
+   * Usuario de acceso para el login (ver LoginScreen.tsx), generado
+   * automáticamente a partir de fullName (ver generateUsername). No tiene
+   * relación con el apodo/id (la clave del roster, ej. "BJ"), que sigue
+   * siendo el identificador interno usado en calendario/turnos/deudas.
+   */
+  username: string;
+  /**
+   * PIN de acceso (4 cifras). Vacío/sin valor = todavía no se ha generado:
+   * la primera vez que esta persona entra en el login, la app genera uno al
+   * azar, se lo muestra una sola vez y queda guardado aquí para las
+   * siguientes veces. El admin puede restablecerlo (lo deja vacío) desde el
+   * panel de Administración si alguien lo pierde.
+   */
+  pin?: string;
 };
 
 export type Roster = Record<string, Persona>;
+
+/**
+ * Quita acentos/diacríticos y caracteres no alfabéticos, en minúsculas.
+ * Ej. "Bartolomé" -> "bartolome".
+ */
+function slugify(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+}
+
+/**
+ * Genera un username único a partir del nombre completo (se usa solo la
+ * primera palabra, ej. "Fernando" de "Fernando Pérez"). Si ya existe ese
+ * username entre `existing` (otro socorrista con el mismo nombre de pila),
+ * añade un número al final (fernando2, fernando3...).
+ */
+export function generateUsername(fullName: string, existing: string[] = []): string {
+  const base = slugify(fullName.trim().split(/\s+/)[0] || 'usuario') || 'usuario';
+  if (!existing.includes(base)) return base;
+  let n = 2;
+  while (existing.includes(`${base}${n}`)) n++;
+  return `${base}${n}`;
+}
 
 /**
  * Indica si un socorrista tiene turnos asignados en una fecha concreta
@@ -90,23 +131,23 @@ export function isPersonaActiveOn(p: Persona, dateStr: string): boolean {
 
 /**
  * Roster de partida (semilla). A partir de aquí el roster real vive en
- * AsyncStorage (src/store/roster.ts) y se gestiona desde la pantalla de
+ * Firestore (src/store/roster.ts) y se gestiona desde la pantalla de
  * administración: este objeto solo se usa la primera vez que arranca la app.
  */
 export const DEFAULT_PERSONAS: Roster = {
   // Termina el 22 de julio
-  BJ: { color: '#2563eb', bg: '#dbeafe', fullName: 'Bartolomé José', activeFrom: '2026-06-12', activeUntil: '2026-07-22', role: 'socorrista' },
-  F:  { color: '#ea580c', bg: '#ffedd5', fullName: 'Fernando',       activeFrom: '2026-06-12', activeUntil: '2026-07-22', role: 'socorrista' },
-  L:  { color: '#16a34a', bg: '#dcfce7', fullName: 'López',          activeFrom: '2026-06-12', activeUntil: '2026-07-22', role: 'socorrista' },
-  M:  { color: '#7c3aed', bg: '#ede9fe', fullName: 'Marisa',         activeFrom: '2026-06-12', activeUntil: '2026-07-22', role: 'socorrista' },
+  BJ: { color: '#2563eb', bg: '#dbeafe', fullName: 'Bartolomé José', activeFrom: '2026-06-12', activeUntil: '2026-07-22', role: 'socorrista', username: 'bartolome' },
+  F:  { color: '#ea580c', bg: '#ffedd5', fullName: 'Fernando',       activeFrom: '2026-06-12', activeUntil: '2026-07-22', role: 'socorrista', username: 'fernando' },
+  L:  { color: '#16a34a', bg: '#dcfce7', fullName: 'López',          activeFrom: '2026-06-12', activeUntil: '2026-07-22', role: 'socorrista', username: 'lopez' },
+  M:  { color: '#7c3aed', bg: '#ede9fe', fullName: 'Marisa',         activeFrom: '2026-06-12', activeUntil: '2026-07-22', role: 'socorrista', username: 'marisa' },
   // Toda la temporada, hasta el 10 de septiembre — horario fijo de correturnos
-  J:  { color: '#d97706', bg: '#fef3c7', fullName: 'Juan',           activeFrom: '2026-06-12', activeUntil: '2026-09-10', role: 'correturnos' },
-  B:  { color: '#dc2626', bg: '#fee2e2', fullName: 'Barti',          activeFrom: '2026-06-12', activeUntil: '2026-09-10', role: 'correturnos' },
+  J:  { color: '#d97706', bg: '#fef3c7', fullName: 'Juan',           activeFrom: '2026-06-12', activeUntil: '2026-09-10', role: 'correturnos', username: 'juan' },
+  B:  { color: '#dc2626', bg: '#fee2e2', fullName: 'Barti',          activeFrom: '2026-06-12', activeUntil: '2026-09-10', role: 'correturnos', username: 'barti' },
   // Nuevos, se incorporan en agosto (fecha de inicio pendiente de confirmar) hasta el 10 de septiembre
-  C:  { color: '#0891b2', bg: '#cffafe', fullName: 'Chencho',        activeUntil: '2026-09-10', role: 'socorrista' },
-  R:  { color: '#db2777', bg: '#fce7f3', fullName: 'Rosalía',        activeUntil: '2026-09-10', role: 'socorrista' },
-  MJ: { color: '#65a30d', bg: '#ecfccb', fullName: 'Meji',           activeUntil: '2026-09-10', role: 'socorrista' },
-  A:  { color: '#475569', bg: '#e2e8f0', fullName: 'Ana',            activeUntil: '2026-09-10', role: 'socorrista' },
+  C:  { color: '#0891b2', bg: '#cffafe', fullName: 'Chencho',        activeUntil: '2026-09-10', role: 'socorrista', username: 'chencho' },
+  R:  { color: '#db2777', bg: '#fce7f3', fullName: 'Rosalía',        activeUntil: '2026-09-10', role: 'socorrista', username: 'rosalia' },
+  MJ: { color: '#65a30d', bg: '#ecfccb', fullName: 'Meji',           activeUntil: '2026-09-10', role: 'socorrista', username: 'meji' },
+  A:  { color: '#475569', bg: '#e2e8f0', fullName: 'Ana',            activeUntil: '2026-09-10', role: 'socorrista', username: 'ana' },
 };
 
 /** Paleta de colores disponible al crear/editar un socorrista en la pantalla de administración */

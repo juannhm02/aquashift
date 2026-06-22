@@ -9,6 +9,10 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+  Keyboard,
 } from 'react-native';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
@@ -114,6 +118,7 @@ export function SwapRequestModal({ visible, month, day, currentUser, onClose, on
 
   async function submitRequest() {
     if (!targetPerson || !selectedShift || day === null) return;
+    Keyboard.dismiss();
     setLoading(true);
     try {
       const aiMessage = await generateSwapMessage({
@@ -152,121 +157,130 @@ export function SwapRequestModal({ visible, month, day, currentUser, onClose, on
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={e => e.stopPropagation()}>
-          <View style={styles.handle} />
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-            <Text style={styles.closeTxt}>✕</Text>
-          </TouchableOpacity>
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        <Pressable style={styles.backdrop} onPress={onClose}>
+          <Pressable style={styles.sheet} onPress={e => e.stopPropagation()}>
+            <View style={styles.handle} />
+            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+              <Text style={styles.closeTxt}>✕</Text>
+            </TouchableOpacity>
 
-          <Text style={styles.sheetTitle}>
-            {MONTH_NAME[month]} {day}
-          </Text>
-          <Text style={styles.sheetSub}>Solicitar cambio de turno</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={styles.sheetTitle}>
+                {MONTH_NAME[month]} {day}
+              </Text>
+              <Text style={styles.sheetSub}>Solicitar cambio de turno</Text>
 
-          {/* Día info */}
-          <View style={styles.dayBox}>
-            {modalShifts.map((raw, i) => {
-              // "J-B" y "B-J" son la misma pareja: se muestran siempre en
-              // orden alfabético con el mismo color (ver canonicalRaw).
-              const display = canonicalRaw(raw);
-              const { working } = parseShift(display);
-              return (
-                <View key={i} style={styles.shiftRow}>
-                  {/* Se muestra tal cual está anotado el turno (ej. "F(B)-M"),
-                      sin expandir la sustitución a texto. */}
-                  <View style={styles.shiftPerson}>
-                    <View style={[styles.sdot, { backgroundColor: roster[working[0]]?.color }]} />
-                    <Text style={styles.shiftPersonTxt}>{display}</Text>
-                  </View>
-                  <Text style={styles.shiftHoursTxt}>
-                    {day !== null
-                      ? resolveHours(weekdayOf(meta.startOffset, day), i, parseNote(raw), working, roster)
-                      : ''}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-
-          {!canSend ? (
-            <Text style={styles.noShift}>
-              {myShiftsInDay.length === 0
-                ? 'No tienes turno este día.'
-                : 'No hay ningún compañero activo disponible para esa fecha.'}
-            </Text>
-          ) : (
-            <>
-              <Text style={styles.fieldLabel}>Mi turno</Text>
-              <View style={styles.personRow}>
-                {myShiftsInDay.map(raw => (
-                  <TouchableOpacity
-                    key={raw}
-                    onPress={() => setSelectedShift(raw)}
-                    style={[styles.shiftChip, selectedShift === raw && styles.shiftChipActive]}
-                  >
-                    <Text
-                      style={[styles.shiftChipTxt, selectedShift === raw && { color: colors.primary }]}
-                    >
-                      {workingPersons(canonicalRaw(raw)).join(' y ')}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              {/* Día info */}
+              <View style={styles.dayBox}>
+                {modalShifts.map((raw, i) => {
+                  // "J-B" y "B-J" son la misma pareja: se muestran siempre en
+                  // orden alfabético con el mismo color (ver canonicalRaw).
+                  const display = canonicalRaw(raw);
+                  const { working } = parseShift(display);
+                  return (
+                    <View key={i} style={styles.shiftRow}>
+                      {/* Se muestra tal cual está anotado el turno (ej. "F(B)-M"),
+                          sin expandir la sustitución a texto. */}
+                      <View style={styles.shiftPerson}>
+                        <View style={[styles.sdot, { backgroundColor: roster[working[0]]?.color }]} />
+                        <Text style={styles.shiftPersonTxt}>{display}</Text>
+                      </View>
+                      <Text style={styles.shiftHoursTxt}>
+                        {day !== null
+                          ? resolveHours(weekdayOf(meta.startOffset, day), i, parseNote(raw), working, roster)
+                          : ''}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
 
-              <Text style={styles.fieldLabel}>Cambiar con</Text>
-              <View style={styles.personRow}>
-                {targetCandidates.map(p => (
-                  <TouchableOpacity
-                    key={p}
-                    onPress={() => setTargetPerson(p)}
-                    style={[styles.personChip, targetPerson === p && styles.personChipActive]}
-                  >
-                    <Avatar id={p} size={28} />
-                    <Text
-                      style={[styles.personChipTxt, targetPerson === p && { color: colors.primary }]}
-                    >
-                      {p}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.fieldLabel}>Nota (opcional)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Ej: Tengo una cita médica..."
-                placeholderTextColor={colors.text3}
-                value={note}
-                onChangeText={setNote}
-                multiline
-                numberOfLines={3}
-              />
-
-              {loading ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator color={colors.primary} />
-                  <Text style={styles.loadingTxt}>Generando mensaje con IA…</Text>
-                </View>
-              ) : note.trim().length === 0 ? (
-                // El botón de enviar solo aparece una vez escrito el motivo:
-                // así el destinatario siempre recibe una explicación del cambio.
-                <Text style={styles.noteHint}>Escribe un motivo para poder enviar la solicitud.</Text>
+              {!canSend ? (
+                <Text style={styles.noShift}>
+                  {myShiftsInDay.length === 0
+                    ? 'No tienes turno este día.'
+                    : 'No hay ningún compañero activo disponible para esa fecha.'}
+                </Text>
               ) : (
-                <TouchableOpacity style={styles.sendBtn} onPress={submitRequest}>
-                  <Text style={styles.sendTxt}>Enviar solicitud</Text>
-                </TouchableOpacity>
+                <>
+                  <Text style={styles.fieldLabel}>Mi turno</Text>
+                  <View style={styles.personRow}>
+                    {myShiftsInDay.map(raw => (
+                      <TouchableOpacity
+                        key={raw}
+                        onPress={() => setSelectedShift(raw)}
+                        style={[styles.shiftChip, selectedShift === raw && styles.shiftChipActive]}
+                      >
+                        <Text
+                          style={[styles.shiftChipTxt, selectedShift === raw && { color: colors.primary }]}
+                        >
+                          {workingPersons(canonicalRaw(raw)).join(' y ')}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={styles.fieldLabel}>Cambiar con</Text>
+                  <View style={styles.personRow}>
+                    {targetCandidates.map(p => (
+                      <TouchableOpacity
+                        key={p}
+                        onPress={() => setTargetPerson(p)}
+                        style={[styles.personChip, targetPerson === p && styles.personChipActive]}
+                      >
+                        <Avatar id={p} size={28} />
+                        <Text
+                          style={[styles.personChipTxt, targetPerson === p && { color: colors.primary }]}
+                        >
+                          {p}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={styles.fieldLabel}>Nota (opcional)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ej: Tengo una cita médica..."
+                    placeholderTextColor={colors.text3}
+                    value={note}
+                    onChangeText={setNote}
+                    multiline
+                    numberOfLines={3}
+                  />
+
+                  {loading ? (
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator color={colors.primary} />
+                      <Text style={styles.loadingTxt}>Generando mensaje con IA…</Text>
+                    </View>
+                  ) : note.trim().length === 0 ? (
+                    // El botón de enviar solo aparece una vez escrito el motivo:
+                    // así el destinatario siempre recibe una explicación del cambio.
+                    <Text style={styles.noteHint}>Escribe un motivo para poder enviar la solicitud.</Text>
+                  ) : (
+                    <TouchableOpacity style={styles.sendBtn} onPress={submitRequest}>
+                      <Text style={styles.sendTxt}>Enviar solicitud</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
               )}
-            </>
-          )}
+            </ScrollView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 function makeStyles(colors: AppColors) {
   return StyleSheet.create({
+    kav: { flex: 1, justifyContent: 'flex-end' },
     backdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.45)',

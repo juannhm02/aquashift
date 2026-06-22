@@ -10,7 +10,7 @@ import {
   Pressable,
   Alert,
 } from 'react-native';
-import { AppColors, PALETTE, Persona, Role } from '../theme/colors';
+import { AppColors, PALETTE, Persona, Role, generateUsername } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { useRoster } from '../store/RosterContext';
 import { DatePickerField } from '../components/DatePickerField';
@@ -63,6 +63,21 @@ export function RosterAdminScreen() {
   const ids = Object.keys(roster);
   const isOpen = creating || editingId !== null;
 
+  // Usernames ya en uso por los demás (excluyendo a quien se está editando,
+  // para no chocar contra el suyo propio al recalcular). Se usa para generar
+  // uno nuevo al crear y para detectar colisiones (ver generateUsername).
+  const otherUsernames = ids
+    .filter(otherId => otherId !== editingId)
+    .map(otherId => roster[otherId]?.username)
+    .filter((u): u is string => Boolean(u));
+
+  // El username solo se genera una vez, al crear: si se edita el nombre
+  // completo de alguien que ya tiene cuenta, su usuario de acceso no cambia
+  // (así no deja de funcionar lo que ya tenga guardado/memorizado).
+  const previewUsername = editingId
+    ? roster[editingId]?.username
+    : generateUsername(form.fullName, otherUsernames);
+
   function openCreate() {
     setForm(EMPTY_FORM);
     setCreating(true);
@@ -94,11 +109,17 @@ export function RosterAdminScreen() {
       Alert.alert('Falta el nombre', 'Indica el nombre completo.');
       return;
     }
+    // Al crear, se genera un username nuevo a partir del nombre; al editar,
+    // se conserva el que ya tenía (y su PIN, si ya lo había generado/usado).
+    const previous = editingId ? roster[editingId] : undefined;
+    const username = previous?.username ?? generateUsername(form.fullName, otherUsernames);
     const persona: Persona = {
       color: form.color,
       bg: form.bg,
       fullName: form.fullName.trim(),
       role: form.role,
+      username,
+      ...(previous?.pin ? { pin: previous.pin } : {}),
       ...(form.activeFrom.trim() ? { activeFrom: form.activeFrom.trim() } : {}),
       ...(form.activeUntil.trim() ? { activeUntil: form.activeUntil.trim() } : {}),
     };
@@ -108,6 +129,24 @@ export function RosterAdminScreen() {
     }
     await upsertPersona(id, persona);
     closeModal();
+  }
+
+  function handleResetPin(id: string) {
+    Alert.alert(
+      'Restablecer PIN',
+      `Se borrará el PIN actual de "${id}" (${roster[id]?.fullName}). La próxima vez que entre, se le generará uno nuevo.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Restablecer',
+          style: 'destructive',
+          onPress: () => {
+            const { pin, ...rest } = roster[id];
+            upsertPersona(id, rest as Persona);
+          },
+        },
+      ]
+    );
   }
 
   function handleRemove(id: string) {
@@ -147,7 +186,13 @@ export function RosterAdminScreen() {
                   ? ` · ${p.activeFrom ?? '…'} → ${p.activeUntil ?? '…'}`
                   : ''}
               </Text>
+              <Text style={styles.rowUser}>
+                Usuario: {p.username} · PIN {p.pin ? 'asignado' : 'pendiente (se genera al entrar)'}
+              </Text>
             </View>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => handleResetPin(id)}>
+              <Text style={styles.iconTxt}>🔄</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(id)}>
               <Text style={styles.iconTxt}>✎</Text>
             </TouchableOpacity>
@@ -189,6 +234,10 @@ export function RosterAdminScreen() {
                 value={form.fullName}
                 onChangeText={v => setForm(f => ({ ...f, fullName: v }))}
               />
+              <Text style={styles.usernamePreview}>
+                Usuario de acceso: {previewUsername || '…'}
+                {editingId ? '' : ' (se generará al guardar)'}
+              </Text>
 
               <Text style={styles.fieldLabel}>Rol</Text>
               <View style={styles.chipRow}>
@@ -273,6 +322,8 @@ function makeStyles(colors: AppColors) {
     rowInfo: { flex: 1 },
     rowName: { fontSize: 13, fontWeight: '600', color: colors.text },
     rowMeta: { fontSize: 11, color: colors.text3, marginTop: 2 },
+    rowUser: { fontSize: 11, color: colors.text3, marginTop: 2, fontStyle: 'italic' },
+    usernamePreview: { fontSize: 11, color: colors.text3, fontStyle: 'italic', marginTop: -2 },
     iconBtn: { padding: 6 },
     iconTxt: { fontSize: 16, color: colors.text2 },
 

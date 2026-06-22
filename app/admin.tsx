@@ -7,13 +7,16 @@ import {
   StyleSheet,
   Alert,
   SafeAreaView,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AppColors } from '../src/theme/colors';
 import { useTheme } from '../src/theme/ThemeContext';
 import { RosterAdminScreen } from '../src/screens/RosterAdminScreen';
 import { ShiftAdminScreen } from '../src/screens/ShiftAdminScreen';
-import { verifyAdminPin, setAdminPin } from '../src/store/adminAuth';
+import { verifyAdminCredentials, setAdminCredentials } from '../src/store/adminAuth';
 
 type Section = 'roster' | 'shifts';
 
@@ -22,64 +25,83 @@ export default function AdminScreen() {
   const { colors, scheme, toggleScheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [unlocked, setUnlocked] = useState(false);
-  const [pin, setPin] = useState('');
-  const [changingPin, setChangingPin] = useState(false);
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [changingCreds, setChangingCreds] = useState(false);
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [section, setSection] = useState<Section>('roster');
 
   async function handleUnlock() {
-    const ok = await verifyAdminPin(pin.trim());
+    const ok = await verifyAdminCredentials(username.trim(), password);
     if (!ok) {
-      Alert.alert('PIN incorrecto', 'Inténtalo de nuevo.');
-      setPin('');
+      Alert.alert('Credenciales incorrectas', 'Revisa el usuario y la contraseña.');
+      setPassword('');
       return;
     }
     setUnlocked(true);
   }
 
-  async function handleChangePin() {
-    if (newPin.trim().length < 4) {
-      Alert.alert('PIN demasiado corto', 'Usa al menos 4 dígitos.');
+  async function handleChangeCreds() {
+    if (!newUsername.trim()) {
+      Alert.alert('Falta el usuario', 'Indica el nuevo usuario de administración.');
       return;
     }
-    if (newPin.trim() !== confirmPin.trim()) {
-      Alert.alert('No coincide', 'Los dos PIN introducidos no son iguales.');
+    if (newPassword.trim().length < 4) {
+      Alert.alert('Contraseña demasiado corta', 'Usa al menos 4 caracteres.');
       return;
     }
-    await setAdminPin(newPin.trim());
-    setChangingPin(false);
-    setNewPin('');
-    setConfirmPin('');
-    Alert.alert('PIN actualizado', 'El nuevo PIN ya está activo.');
+    if (newPassword.trim() !== confirmPassword.trim()) {
+      Alert.alert('No coincide', 'Las dos contraseñas introducidas no son iguales.');
+      return;
+    }
+    await setAdminCredentials(newUsername.trim(), newPassword.trim());
+    setChangingCreds(false);
+    setNewUsername('');
+    setNewPassword('');
+    setConfirmPassword('');
+    Alert.alert('Credenciales actualizadas', 'El nuevo usuario/contraseña ya está activo.');
   }
 
   if (!unlocked) {
     return (
       <SafeAreaView style={styles.safe}>
-        <View style={styles.lockContainer}>
-          <Text style={styles.emoji}>🔒</Text>
-          <Text style={styles.title}>Administración</Text>
-          <Text style={styles.subtitle}>Introduce el PIN de acceso</Text>
-          <TextInput
-            style={styles.pinInput}
-            value={pin}
-            onChangeText={setPin}
-            placeholder="••••"
-            placeholderTextColor={colors.text3}
-            keyboardType="number-pad"
-            secureTextEntry
-            maxLength={8}
-            autoFocus
-            onSubmitEditing={handleUnlock}
-          />
-          <TouchableOpacity style={styles.unlockBtn} onPress={handleUnlock}>
-            <Text style={styles.unlockTxt}>Entrar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/')}>
-            <Text style={styles.backTxt}>Volver</Text>
-          </TouchableOpacity>
-        </View>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView contentContainerStyle={styles.lockContainer} keyboardShouldPersistTaps="handled">
+            <Text style={styles.emoji}>🔒</Text>
+            <Text style={styles.title}>Administración</Text>
+            <Text style={styles.subtitle}>Acceso restringido al administrador</Text>
+            <TextInput
+              style={styles.credInput}
+              value={username}
+              onChangeText={setUsername}
+              placeholder="Usuario"
+              placeholderTextColor={colors.text3}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TextInput
+              style={styles.credInput}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Contraseña"
+              placeholderTextColor={colors.text3}
+              secureTextEntry
+              autoCapitalize="none"
+              onSubmitEditing={handleUnlock}
+            />
+            <TouchableOpacity style={styles.unlockBtn} onPress={handleUnlock}>
+              <Text style={styles.unlockTxt}>Entrar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/')}>
+              <Text style={styles.backTxt}>Volver</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -89,8 +111,8 @@ export default function AdminScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Administración</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => setChangingPin(c => !c)} style={styles.headerBtn}>
-            <Text style={styles.headerBtnTxt}>Cambiar PIN</Text>
+          <TouchableOpacity onPress={() => setChangingCreds(c => !c)} style={styles.headerBtn}>
+            <Text style={styles.headerBtnTxt}>Cambiar acceso</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={toggleScheme} style={styles.headerBtn}>
             <Text style={styles.headerBtnTxt}>{scheme === 'dark' ? '☀️' : '🌙'}</Text>
@@ -120,32 +142,40 @@ export default function AdminScreen() {
         </TouchableOpacity>
       </View>
 
-      {changingPin && (
-        <View style={styles.pinChangeBox}>
-          <Text style={styles.fieldLabel}>Nuevo PIN</Text>
+      {changingCreds && (
+        <View style={styles.credChangeBox}>
+          <Text style={styles.fieldLabel}>Nuevo usuario</Text>
           <TextInput
             style={styles.input}
-            value={newPin}
-            onChangeText={setNewPin}
-            placeholder="Nuevo PIN"
+            value={newUsername}
+            onChangeText={setNewUsername}
+            placeholder="Nuevo usuario de administración"
             placeholderTextColor={colors.text3}
-            keyboardType="number-pad"
-            secureTextEntry
-            maxLength={8}
+            autoCapitalize="none"
+            autoCorrect={false}
           />
-          <Text style={styles.fieldLabel}>Confirmar PIN</Text>
+          <Text style={styles.fieldLabel}>Nueva contraseña</Text>
           <TextInput
             style={styles.input}
-            value={confirmPin}
-            onChangeText={setConfirmPin}
-            placeholder="Repite el PIN"
+            value={newPassword}
+            onChangeText={setNewPassword}
+            placeholder="Nueva contraseña"
             placeholderTextColor={colors.text3}
-            keyboardType="number-pad"
             secureTextEntry
-            maxLength={8}
+            autoCapitalize="none"
           />
-          <TouchableOpacity style={styles.saveBtn} onPress={handleChangePin}>
-            <Text style={styles.saveTxt}>Guardar PIN</Text>
+          <Text style={styles.fieldLabel}>Confirmar contraseña</Text>
+          <TextInput
+            style={styles.input}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Repite la contraseña"
+            placeholderTextColor={colors.text3}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          <TouchableOpacity style={styles.saveBtn} onPress={handleChangeCreds}>
+            <Text style={styles.saveTxt}>Guardar</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -159,31 +189,32 @@ function makeStyles(colors: AppColors) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.bg },
     lockContainer: {
-      flex: 1,
+      flexGrow: 1,
       alignItems: 'center',
       justifyContent: 'center',
       padding: 32,
     },
     emoji: { fontSize: 44, marginBottom: 12 },
     title: { fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: 6 },
-    subtitle: { fontSize: 14, color: colors.text2, marginBottom: 24 },
-    pinInput: {
-      width: 160,
+    subtitle: { fontSize: 14, color: colors.text2, marginBottom: 24, textAlign: 'center' },
+    credInput: {
+      width: '100%',
+      maxWidth: 280,
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: 12,
       padding: 14,
-      fontSize: 20,
-      textAlign: 'center',
+      fontSize: 15,
       color: colors.text,
       backgroundColor: colors.surface,
-      marginBottom: 16,
+      marginBottom: 12,
     },
     unlockBtn: {
       backgroundColor: colors.primary,
       borderRadius: 12,
       paddingVertical: 12,
       paddingHorizontal: 32,
+      marginTop: 4,
       marginBottom: 10,
     },
     unlockTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
@@ -226,7 +257,7 @@ function makeStyles(colors: AppColors) {
     sectionBtnActive: { borderColor: colors.primary, backgroundColor: colors.blueLight },
     sectionTxt: { fontSize: 13, fontWeight: '700', color: colors.text2 },
     sectionTxtActive: { color: colors.primary },
-    pinChangeBox: {
+    credChangeBox: {
       backgroundColor: colors.surface,
       margin: 12,
       borderRadius: 12,
