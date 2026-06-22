@@ -27,6 +27,12 @@
     "scheme": "aquashift",
     "experiments": {
       "typedRoutes": true
+    },
+    "owner": "juaaanhms-team",
+    "extra": {
+      "eas": {
+        "projectId": "ba46b003-0b8f-4228-9879-0dfa1ac9233c"
+      }
     }
   }
 }

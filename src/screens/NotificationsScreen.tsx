@@ -14,6 +14,7 @@ import { useShiftOverrides } from '../store/ShiftOverridesContext';
 import { getEffectiveData } from '../store/shiftOverrides';
 import { Avatar } from '../components/Avatar';
 import { SwapRequest, updateSwapStatus } from '../store/swaps';
+import { notifySwapResponse } from '../store/notifications';
 import { MONTH_NAME as MN, getMonthMeta } from '../data/season';
 import { MONTH_DATA, workingPersons, parseNote, applySubstitution, canonicalRaw } from '../data/shifts';
 import { weekdayOf, resolveHours, rangeHours } from '../data/hours';
@@ -67,6 +68,17 @@ export function NotificationsScreen({ currentUser, swaps, onSwapsChange }: Props
     await updateSwapStatus(id, status, hours);
     // `swaps` se actualiza solo vía la suscripción a Firestore en
     // app/(tabs)/_layout.tsx, también en el dispositivo de quien solicitó el cambio.
+    // Push real al móvil de quien pidió el cambio, avisando del resultado.
+    if (swap) {
+      notifySwapResponse({
+        to: swap.from,
+        from: currentUser,
+        day: swap.day,
+        month: swap.month,
+        shift: swap.shift,
+        status,
+      });
+    }
     Alert.alert(
       status === 'accepted' ? 'Cambio aceptado ✓' : 'Cambio rechazado',
       status === 'accepted'

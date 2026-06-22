@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { AppColors, Persona } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { useRoster } from '../store/RosterContext';
+import { registerPushToken } from '../store/notifications';
 
 type AccessStatus = 'active' | 'not-started' | 'finished';
 
@@ -39,6 +40,10 @@ export default function LoginScreen() {
       Alert.alert('Acceso no disponible', STATUS_MESSAGE[status]);
       return;
     }
+    // Guarda/actualiza el Expo push token de este dispositivo para `id`, así
+    // los demás pueden mandarle push reales (ver src/store/notifications.ts).
+    // No bloquea el login si falla (p.ej. en Expo Go o sin permiso).
+    registerPushToken(id);
     router.replace({ pathname: '/(tabs)/june', params: { user: id } });
   }
 
