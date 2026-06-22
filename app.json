@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "AquaShift",
+    "slug": "aquashift",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#1a7fd4"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.aquashift.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1a7fd4"
+      },
+      "package": "com.aquashift.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-notifications"
+    ],
+    "scheme": "aquashift",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
