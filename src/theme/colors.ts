@@ -79,13 +79,18 @@ export type Persona = {
    */
   username: string;
   /**
-   * PIN de acceso (4 cifras). Vacío/sin valor = todavía no se ha generado:
-   * la primera vez que esta persona entra en el login, la app genera uno al
-   * azar, se lo muestra una sola vez y queda guardado aquí para las
-   * siguientes veces. El admin puede restablecerlo (lo deja vacío) desde el
-   * panel de Administración si alguien lo pierde.
+   * PIN de acceso (4 cifras). Lo asigna el admin al crear la cuenta (o al
+   * restablecerlo desde el panel de Administración) — nunca se genera ni se
+   * muestra automáticamente a quien toque el avatar en el login, porque eso
+   * permitiría que cualquiera "robase" el PIN de otro con solo tocarlo.
    */
   pin?: string;
+  /**
+   * true = este PIN es el que asignó el admin (provisional): en el próximo
+   * login, antes de entrar, se obliga a esa persona a cambiarlo por uno
+   * propio que solo ella conozca. Se pone a false en cuanto lo cambia.
+   */
+  pinIsTemp?: boolean;
 };
 
 export type Roster = Record<string, Persona>;
@@ -114,6 +119,16 @@ export function generateUsername(fullName: string, existing: string[] = []): str
   let n = 2;
   while (existing.includes(`${base}${n}`)) n++;
   return `${base}${n}`;
+}
+
+/**
+ * PIN provisional de 4 cifras al azar (1000-9999), que el admin asigna al
+ * crear una cuenta o al restablecer un PIN perdido (ver RosterAdminScreen).
+ * Se marca como `pinIsTemp` para que esa persona tenga que cambiarlo por uno
+ * propio la primera vez que entre (ver LoginScreen).
+ */
+export function generatePin(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
 }
 
 /**
