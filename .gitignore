@@ -5,3 +5,21 @@
 expo-env.d.ts
 .expo/
 # @end expo-cli
+
+# dependencies
+node_modules/
+
+# logs
+npm_install_progress.log
+*.log
+
+# native build artifacts
+ios/
+android/
+.gradle/
+
+# misc
+.DS_Store
+*.env
+.env.local
+*.bak
