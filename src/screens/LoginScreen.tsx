@@ -12,12 +12,15 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AppColors, Persona } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { useRoster } from '../store/RosterContext';
 import { registerPushToken } from '../store/notifications';
+
+const LOGO = require('../../assets/icon.png');
 
 type AccessStatus = 'active' | 'not-started' | 'finished';
 
@@ -33,10 +36,7 @@ const STATUS_MESSAGE: Record<'not-started' | 'finished', string> = {
   finished: 'Tu periodo de turnos de esta temporada ya ha finalizado.',
 };
 
-// Modo del modal de PIN: primero se pide el PIN actual (el que tenga, sea
-// definitivo o provisional); si el que tenía era provisional, en vez de
-// entrar directamente se pasa a pedirle uno nuevo de su elección.
-type PinMode = 'enter-pin' | 'set-new-pin';
+const MIN_PASSWORD_LENGTH = 4;
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -45,219 +45,198 @@ export default function LoginScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const personasList = Object.keys(roster);
 
-  // Persona para la que se está pidiendo/cambiando el PIN (modal abierto).
-  const [pinTarget, setPinTarget] = useState<string | null>(null);
-  const [pinMode, setPinMode] = useState<PinMode>('enter-pin');
-  const [pinInput, setPinInput] = useState('');
-  const [newPinInput, setNewPinInput] = useState('');
-  const [newPinConfirm, setNewPinConfirm] = useState('');
+  // El nombre solo se puede ELEGIR de la lista de socorristas que ya existen
+  // (no se puede escribir uno libre): así nadie puede intentar entrar con un
+  // nombre que no está en el roster.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+
+  const selectedPersona = selectedId ? roster[selectedId] : null;
+  const hasPassword = !!selectedPersona?.password;
 
   function finishLogin(id: string) {
     // Guarda/actualiza el Expo push token de este dispositivo para `id`, así
     // los demás pueden mandarle push reales (ver src/store/notifications.ts).
     // No bloquea el login si falla (p.ej. en Expo Go o sin permiso).
     registerPushToken(id);
-    closePinModal();
     router.replace({ pathname: '/(tabs)/june', params: { user: id } });
   }
 
-  function closePinModal() {
-    setPinTarget(null);
-    setPinMode('enter-pin');
-    setPinInput('');
-    setNewPinInput('');
-    setNewPinConfirm('');
+  function openPicker() {
+    setPickerOpen(true);
   }
 
-  async function handleCardPress(id: string) {
+  function selectPersona(id: string) {
     const status = getAccessStatus(roster[id]);
     if (status !== 'active') {
       Alert.alert('Acceso no disponible', STATUS_MESSAGE[status]);
       return;
     }
-    const persona = roster[id];
-    if (!persona.pin) {
-      // Ya no se autogenera un PIN al tocar el avatar: cualquiera podría
-      // "robar" así el PIN de otra persona con solo tocar su nombre. El PIN
-      // inicial lo asigna el admin desde el panel de Administración y se lo
-      // pasa a esa persona por su cuenta (ver RosterAdminScreen.tsx).
-      Alert.alert(
-        'Sin PIN asignado',
-        'Todavía no tienes un PIN asignado. Pídele al administrador que te lo asigne desde el panel de Administración.'
-      );
-      return;
-    }
-    setPinMode('enter-pin');
-    setPinInput('');
-    setPinTarget(id);
+    setSelectedId(id);
+    setPassword('');
+    setNewPassword('');
+    setNewPasswordConfirm('');
+    setPickerOpen(false);
   }
 
-  function handleConfirmPin() {
-    if (!pinTarget) return;
-    const persona = roster[pinTarget];
-    if (pinInput.trim() !== persona.pin) {
-      Alert.alert('PIN incorrecto', 'Revisa las 4 cifras e inténtalo de nuevo.');
-      setPinInput('');
-      return;
-    }
-    if (persona.pinIsTemp) {
-      // El PIN que tenía era provisional (asignado por el admin): antes de
-      // dejarle entrar, se le obliga a elegir uno propio que solo ella conozca.
-      setPinMode('set-new-pin');
-      setNewPinInput('');
-      setNewPinConfirm('');
-      return;
-    }
-    finishLogin(pinTarget);
-  }
+  async function handleSubmit() {
+    if (!selectedId || !selectedPersona) return;
 
-  async function handleConfirmNewPin() {
-    if (!pinTarget) return;
-    const trimmed = newPinInput.trim();
-    if (trimmed.length !== 4 || !/^\d{4}$/.test(trimmed)) {
-      Alert.alert('PIN inválido', 'El PIN debe tener 4 cifras.');
+    if (hasPassword) {
+      if (password === selectedPersona.password) {
+        finishLogin(selectedId);
+      } else {
+        Alert.alert('Contraseña incorrecta', 'Revísala e inténtalo de nuevo.');
+        setPassword('');
+      }
       return;
     }
-    if (trimmed !== newPinConfirm.trim()) {
-      Alert.alert('No coinciden', 'Los dos PIN que has escrito no son iguales.');
-      setNewPinConfirm('');
+
+    // Primera vez que esta persona entra: crea su propia contraseña en este
+    // momento (autoservicio, sin que el admin tenga que asignar ni pasar nada).
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      Alert.alert('Contraseña demasiado corta', `Usa al menos ${MIN_PASSWORD_LENGTH} caracteres.`);
       return;
     }
-    const persona = roster[pinTarget];
-    await upsertPersona(pinTarget, { ...persona, pin: trimmed, pinIsTemp: false });
-    finishLogin(pinTarget);
+    if (newPassword !== newPasswordConfirm) {
+      Alert.alert('No coinciden', 'Las dos contraseñas que has escrito no son iguales.');
+      setNewPasswordConfirm('');
+      return;
+    }
+    await upsertPersona(selectedId, { ...selectedPersona, password: newPassword });
+    finishLogin(selectedId);
   }
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.emoji}>🏊</Text>
-        <Text style={styles.title}>AquaShift</Text>
-        <Text style={styles.subtitle}>Selecciona tu nombre para entrar</Text>
-        <View style={styles.grid}>
-          {personasList.map(id => {
-            const p = roster[id];
-            const status = getAccessStatus(p);
-            const inactive = status !== 'active';
-            return (
-              <TouchableOpacity
-                key={id}
-                style={[styles.card, inactive && styles.cardInactive]}
-                onPress={() => handleCardPress(id)}
-                activeOpacity={0.75}
-              >
-                <View
-                  style={[
-                    styles.avatar,
-                    { backgroundColor: p.bg },
-                    inactive && styles.avatarInactive,
-                  ]}
-                >
-                  <Text style={[styles.avatarText, { color: p.color }]}>
-                    {id}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+          <Image source={LOGO} style={styles.logo} resizeMode="cover" />
+          <Text style={styles.title}>AquaShift</Text>
+          <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
+
+          <Text style={styles.fieldLabel}>Usuario</Text>
+          <TouchableOpacity style={styles.selector} onPress={openPicker} activeOpacity={0.7}>
+            {selectedPersona ? (
+              <View style={styles.selectorChosen}>
+                <View style={[styles.miniAvatar, { backgroundColor: selectedPersona.bg }]}>
+                  <Text style={[styles.miniAvatarTxt, { color: selectedPersona.color }]}>
+                    {selectedId}
                   </Text>
                 </View>
-                <Text style={[styles.cardLabel, inactive && styles.cardLabelInactive]}>
-                  {id}
-                </Text>
-                <Text style={styles.cardFullName} numberOfLines={1}>
-                  {p.fullName}
-                </Text>
-                {inactive && (
-                  <Text style={styles.cardStatus}>
-                    {status === 'not-started' ? 'Aún no activo' : 'Finalizado'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                <Text style={styles.selectorTxt}>{selectedPersona.fullName}</Text>
+              </View>
+            ) : (
+              <Text style={styles.selectorPlaceholder}>Selecciona tu nombre</Text>
+            )}
+            <Text style={styles.selectorChevron}>▾</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.adminLink}
-          onPress={() => router.push('/admin')}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.adminLinkTxt}>Administración</Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      <Modal
-        visible={pinTarget !== null}
-        animationType="fade"
-        transparent
-        onRequestClose={closePinModal}
-      >
-        <KeyboardAvoidingView
-          style={styles.kav}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <Pressable style={styles.backdrop} onPress={closePinModal}>
-            <Pressable style={styles.pinSheet} onPress={e => e.stopPropagation()}>
-              {pinMode === 'enter-pin' ? (
+          {selectedId && selectedPersona && (
+            <View style={styles.passwordBlock}>
+              {hasPassword ? (
                 <>
-                  <Text style={styles.pinTitle}>
-                    Hola, {pinTarget ? roster[pinTarget]?.fullName : ''}
-                  </Text>
-                  <Text style={styles.pinSubtitle}>Introduce tu PIN de 4 cifras</Text>
+                  <Text style={styles.fieldLabel}>Contraseña</Text>
                   <TextInput
-                    style={styles.pinInput}
-                    value={pinInput}
-                    onChangeText={setPinInput}
-                    keyboardType="number-pad"
-                    maxLength={4}
+                    style={styles.input}
+                    value={password}
+                    onChangeText={setPassword}
                     secureTextEntry
                     autoFocus
-                    onSubmitEditing={handleConfirmPin}
-                    placeholder="••••"
+                    onSubmitEditing={handleSubmit}
+                    placeholder="Tu contraseña"
                     placeholderTextColor={colors.text3}
                   />
-                  <TouchableOpacity style={styles.pinBtn} onPress={handleConfirmPin}>
-                    <Text style={styles.pinBtnTxt}>Entrar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.pinCancel} onPress={closePinModal}>
-                    <Text style={styles.pinCancelTxt}>Cancelar</Text>
-                  </TouchableOpacity>
                 </>
               ) : (
                 <>
-                  <Text style={styles.pinTitle}>Elige tu PIN</Text>
-                  <Text style={styles.pinSubtitle}>
-                    Es la primera vez que entras: elige un PIN de 4 cifras que solo tú conozcas.
+                  <Text style={styles.firstTimeHint}>
+                    Es la primera vez que entras: crea tu contraseña.
                   </Text>
+                  <Text style={styles.fieldLabel}>Nueva contraseña</Text>
                   <TextInput
-                    style={styles.pinInput}
-                    value={newPinInput}
-                    onChangeText={setNewPinInput}
-                    keyboardType="number-pad"
-                    maxLength={4}
+                    style={styles.input}
+                    value={newPassword}
+                    onChangeText={setNewPassword}
                     secureTextEntry
                     autoFocus
-                    placeholder="Nuevo PIN"
+                    placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
                     placeholderTextColor={colors.text3}
                   />
+                  <Text style={styles.fieldLabel}>Repite la contraseña</Text>
                   <TextInput
-                    style={styles.pinInput}
-                    value={newPinConfirm}
-                    onChangeText={setNewPinConfirm}
-                    keyboardType="number-pad"
-                    maxLength={4}
+                    style={styles.input}
+                    value={newPasswordConfirm}
+                    onChangeText={setNewPasswordConfirm}
                     secureTextEntry
-                    onSubmitEditing={handleConfirmNewPin}
-                    placeholder="Repite el PIN"
+                    onSubmitEditing={handleSubmit}
+                    placeholder="Repite la contraseña"
                     placeholderTextColor={colors.text3}
                   />
-                  <TouchableOpacity style={styles.pinBtn} onPress={handleConfirmNewPin}>
-                    <Text style={styles.pinBtnTxt}>Guardar y entrar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.pinCancel} onPress={closePinModal}>
-                    <Text style={styles.pinCancelTxt}>Cancelar</Text>
-                  </TouchableOpacity>
                 </>
               )}
-            </Pressable>
+
+              <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
+                <Text style={styles.submitTxt}>{hasPassword ? 'Entrar' : 'Crear contraseña y entrar'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.adminLink}
+            onPress={() => router.push('/admin')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.adminLinkTxt}>Administración</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <Modal
+        visible={pickerOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setPickerOpen(false)}>
+          <Pressable style={styles.pickerSheet} onPress={e => e.stopPropagation()}>
+            <View style={styles.handle} />
+            <Text style={styles.pickerTitle}>Selecciona tu nombre</Text>
+            <ScrollView style={{ maxHeight: '100%' }}>
+              {personasList.map(id => {
+                const p = roster[id];
+                const status = getAccessStatus(p);
+                const inactive = status !== 'active';
+                return (
+                  <TouchableOpacity
+                    key={id}
+                    style={[styles.pickerRow, inactive && styles.pickerRowInactive]}
+                    onPress={() => selectPersona(id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.miniAvatar, { backgroundColor: p.bg }]}>
+                      <Text style={[styles.miniAvatarTxt, { color: p.color }]}>{id}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.pickerRowName}>{p.fullName}</Text>
+                      {inactive && (
+                        <Text style={styles.pickerRowStatus}>
+                          {status === 'not-started' ? 'Aún no activo' : 'Finalizado'}
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </Pressable>
-        </KeyboardAvoidingView>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -272,12 +251,14 @@ function makeStyles(colors: AppColors) {
     container: {
       flexGrow: 1,
       alignItems: 'center',
-      justifyContent: 'center',
       padding: 32,
+      paddingTop: 56,
     },
-    emoji: {
-      fontSize: 48,
-      marginBottom: 12,
+    logo: {
+      width: 88,
+      height: 88,
+      borderRadius: 22,
+      marginBottom: 14,
     },
     title: {
       fontSize: 26,
@@ -288,65 +269,69 @@ function makeStyles(colors: AppColors) {
     subtitle: {
       fontSize: 14,
       color: colors.text2,
-      marginBottom: 36,
+      marginBottom: 32,
     },
-    grid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 12,
-      justifyContent: 'center',
+    fieldLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: colors.text3,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      alignSelf: 'flex-start',
+      marginBottom: 8,
+      marginTop: 14,
+    },
+    selector: {
       width: '100%',
-    },
-    card: {
-      width: '28%',
-      backgroundColor: colors.surface,
-      borderRadius: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
       borderWidth: 1.5,
       borderColor: colors.border,
-      alignItems: 'center',
-      paddingVertical: 18,
-      paddingHorizontal: 8,
-      gap: 10,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      backgroundColor: colors.surface,
     },
-    avatar: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
+    selectorChosen: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    selectorTxt: { fontSize: 15, fontWeight: '600', color: colors.text },
+    selectorPlaceholder: { fontSize: 14, color: colors.text3 },
+    selectorChevron: { fontSize: 14, color: colors.text3 },
+    miniAvatar: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    avatarText: {
-      fontSize: 18,
-      fontWeight: '700',
+    miniAvatarTxt: { fontSize: 11, fontWeight: '700' },
+    passwordBlock: { width: '100%' },
+    firstTimeHint: {
+      fontSize: 12,
+      color: colors.text2,
+      marginTop: 14,
+      lineHeight: 17,
     },
-    cardLabel: {
-      fontSize: 14,
-      fontWeight: '600',
+    input: {
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      borderRadius: 12,
+      padding: 12,
+      fontSize: 15,
       color: colors.text,
+      backgroundColor: colors.surface,
     },
-    cardFullName: {
-      fontSize: 10,
-      color: colors.text3,
-      maxWidth: 78,
+    submitBtn: {
+      backgroundColor: colors.primary,
+      borderRadius: 12,
+      paddingVertical: 14,
+      alignItems: 'center',
+      marginTop: 20,
+      width: '100%',
     },
-    cardInactive: {
-      opacity: 0.45,
-    },
-    avatarInactive: {
-      opacity: 0.7,
-    },
-    cardLabelInactive: {
-      color: colors.text3,
-    },
-    cardStatus: {
-      fontSize: 9,
-      fontWeight: '700',
-      color: colors.red,
-      textTransform: 'uppercase',
-      letterSpacing: 0.3,
-    },
+    submitTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
     adminLink: {
-      marginTop: 32,
+      marginTop: 28,
       paddingVertical: 8,
       paddingHorizontal: 16,
     },
@@ -355,45 +340,46 @@ function makeStyles(colors: AppColors) {
       color: colors.text3,
       fontWeight: '600',
     },
-    kav: { flex: 1, justifyContent: 'center' },
     backdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.45)',
-      alignItems: 'center',
-      justifyContent: 'center',
+      justifyContent: 'flex-end',
     },
-    pinSheet: {
+    pickerSheet: {
       backgroundColor: colors.surface,
-      borderRadius: 18,
-      padding: 24,
-      width: '80%',
-      maxWidth: 320,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 20,
+      paddingBottom: 30,
+      maxHeight: '75%',
+    },
+    handle: {
+      width: 36,
+      height: 4,
+      backgroundColor: colors.border2,
+      borderRadius: 2,
+      alignSelf: 'center',
+      marginBottom: 14,
+    },
+    pickerTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: 12 },
+    pickerRow: {
+      flexDirection: 'row',
       alignItems: 'center',
-    },
-    pinTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: 4 },
-    pinSubtitle: { fontSize: 13, color: colors.text2, marginBottom: 18, textAlign: 'center' },
-    pinInput: {
-      borderWidth: 1.5,
-      borderColor: colors.border,
-      borderRadius: 12,
-      padding: 14,
-      fontSize: 24,
-      letterSpacing: 8,
-      color: colors.text,
-      backgroundColor: colors.surface2,
-      textAlign: 'center',
-      width: '100%',
-      marginBottom: 16,
-    },
-    pinBtn: {
-      backgroundColor: colors.primary,
-      borderRadius: 12,
+      gap: 12,
       paddingVertical: 12,
-      width: '100%',
-      alignItems: 'center',
+      paddingHorizontal: 4,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
     },
-    pinBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
-    pinCancel: { marginTop: 12, padding: 6 },
-    pinCancelTxt: { fontSize: 13, color: colors.text3 },
+    pickerRowInactive: { opacity: 0.45 },
+    pickerRowName: { fontSize: 15, fontWeight: '600', color: colors.text },
+    pickerRowStatus: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: colors.red,
+      textTransform: 'uppercase',
+      letterSpacing: 0.3,
+      marginTop: 2,
+    },
   });
 }

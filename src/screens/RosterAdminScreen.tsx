@@ -10,7 +10,7 @@ import {
   Pressable,
   Alert,
 } from 'react-native';
-import { AppColors, PALETTE, Persona, Role, generateUsername, generatePin } from '../theme/colors';
+import { AppColors, PALETTE, Persona, Role, generateUsername } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { useRoster } from '../store/RosterContext';
 import { DatePickerField } from '../components/DatePickerField';
@@ -109,23 +109,19 @@ export function RosterAdminScreen() {
       Alert.alert('Falta el nombre', 'Indica el nombre completo.');
       return;
     }
-    // Al crear, se genera un username y un PIN provisional nuevos; al
-    // editar, se conservan el username y el PIN que ya tenía (no se vuelve
-    // a generar nada solo por cambiar el nombre o el color).
+    // Al crear, se genera un username nuevo; al editar, se conserva el que ya
+    // tenía (no se vuelve a generar nada solo por cambiar el nombre o el
+    // color). La contraseña la crea cada persona ella misma en su primer
+    // login (ver LoginScreen.tsx) — aquí no se asigna ninguna.
     const previous = editingId ? roster[editingId] : undefined;
     const username = previous?.username ?? generateUsername(form.fullName, otherUsernames);
-    const newPin = previous ? undefined : generatePin();
     const persona: Persona = {
       color: form.color,
       bg: form.bg,
       fullName: form.fullName.trim(),
       role: form.role,
       username,
-      ...(previous?.pin
-        ? { pin: previous.pin, ...(previous.pinIsTemp ? { pinIsTemp: true } : {}) }
-        : newPin
-        ? { pin: newPin, pinIsTemp: true }
-        : {}),
+      ...(previous?.password ? { password: previous.password } : {}),
       ...(form.activeFrom.trim() ? { activeFrom: form.activeFrom.trim() } : {}),
       ...(form.activeUntil.trim() ? { activeUntil: form.activeUntil.trim() } : {}),
     };
@@ -135,33 +131,21 @@ export function RosterAdminScreen() {
     }
     await upsertPersona(id, persona);
     closeModal();
-    // El PIN provisional solo se conoce en este momento: se lo decimos al
-    // admin para que se lo pase a la persona (por WhatsApp, en persona...).
-    // En el primer login se le obligará a cambiarlo por uno propio.
-    if (newPin) {
-      Alert.alert(
-        'Socorrista creado',
-        `PIN provisional de "${id}" (${form.fullName.trim()}): ${newPin}\n\nDíselo: se le pedirá que lo cambie por uno propio la primera vez que entre.`
-      );
-    }
   }
 
-  function handleResetPin(id: string) {
+  function handleResetPassword(id: string) {
     Alert.alert(
-      'Restablecer PIN',
-      `Se generará un PIN provisional nuevo para "${id}" (${roster[id]?.fullName}), que tendrá que cambiar por uno propio en su próximo login. ¿Continuar?`,
+      'Borrar contraseña',
+      `Se borrará la contraseña de "${id}" (${roster[id]?.fullName}). La próxima vez que entre tendrá que crear una nueva. ¿Continuar?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Restablecer',
+          text: 'Borrar',
           style: 'destructive',
           onPress: async () => {
-            const newPin = generatePin();
-            await upsertPersona(id, { ...roster[id], pin: newPin, pinIsTemp: true });
-            Alert.alert(
-              'PIN restablecido',
-              `Nuevo PIN provisional de "${id}": ${newPin}\n\nDíselo: se le pedirá que lo cambie por uno propio al entrar.`
-            );
+            const { password, ...rest } = roster[id];
+            await upsertPersona(id, rest);
+            Alert.alert('Contraseña borrada', `"${id}" tendrá que crear una nueva contraseña al entrar.`);
           },
         },
       ]
@@ -206,17 +190,14 @@ export function RosterAdminScreen() {
                   : ''}
               </Text>
               <Text style={styles.rowUser}>
-                Usuario: {p.username} · PIN{' '}
-                {!p.pin
-                  ? 'sin asignar'
-                  : p.pinIsTemp
-                  ? 'provisional (pendiente de cambiar)'
-                  : 'definitivo'}
+                Usuario: {p.username} · Contraseña: {p.password ? 'creada' : 'aún no creada'}
               </Text>
             </View>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => handleResetPin(id)}>
-              <Text style={styles.iconTxt}>🔄</Text>
-            </TouchableOpacity>
+            {p.password && (
+              <TouchableOpacity style={styles.iconBtn} onPress={() => handleResetPassword(id)}>
+                <Text style={styles.iconTxt}>🔄</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(id)}>
               <Text style={styles.iconTxt}>✎</Text>
             </TouchableOpacity>
